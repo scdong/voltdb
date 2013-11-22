@@ -217,6 +217,8 @@ class __attribute__((visibility("default"))) VoltDBEngine {
         // Executors can call this to note a certain number of tuples have been
         // scanned or processed.index
         inline void noteTuplesProcessedForProgressMonitoring(int tuplesProcessed);
+        inline int64_t pushTuplesProcessedForProgressMonitoring(int64_t totalTuplesProcessed);
+        inline int64_t pullTuplesProcessedForProgressMonitoring(Table* target_table);
 
         // -------------------------------------------------
         // Dependency Transfer Functions
@@ -652,6 +654,20 @@ inline void VoltDBEngine::noteTuplesProcessedForProgressMonitoring(int tuplesPro
     if((m_tuplesProcessedInFragment % LONG_OP_THRESHOLD) == 0) {
         reportProgessToTopend();
     }
+}
+
+inline int64_t VoltDBEngine::pushTuplesProcessedForProgressMonitoring(int64_t totalTuplesProcessed) {
+    m_tuplesProcessedInFragment = totalTuplesProcessed;
+    if((m_tuplesProcessedInFragment % LONG_OP_THRESHOLD) == 0) {
+        reportProgessToTopend();
+    }
+    // reserving the right to "move the target".
+    return m_tuplesProcessedInFragment;
+}
+
+inline int64_t VoltDBEngine::pullTuplesProcessedForProgressMonitoring(Table* target_table) {
+    setLastAccessedTable(target_table);
+    return m_tuplesProcessedInFragment;
 }
 
 } // namespace voltdb

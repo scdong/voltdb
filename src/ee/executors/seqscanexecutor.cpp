@@ -103,6 +103,34 @@ bool SeqScanExecutor::needsOutputTableClear() {
     return node->needsOutputTableClear();
 }
 
+
+class ProgressMonitorProxy {
+public:
+    ProgressMonitorProxy(VoltDBEngine* engine, Table* target_table)
+        : m_engine(engine)
+        , m_tuplesProcessedInFragment(engine->pullTuplesProcessedForProgressMonitoring(target_table))
+    {}
+
+    void progress()
+    {
+        ++m_tuplesProcessedInFragment;
+        if ((m_tuplesProcessedInFragment % LONG_OP_THRESHOLD) == 0) {
+            m_tuplesProcessedInFragment =
+                m_engine->pushTuplesProcessedForProgressMonitoring(m_tuplesProcessedInFragment);
+        }
+    }
+
+    ~ProgressMonitorProxy()
+    {
+        m_engine->pushTuplesProcessedForProgressMonitoring(m_tuplesProcessedInFragment);
+    }
+
+public:
+    VoltDBEngine* const m_engine;
+    int64_t m_tuplesProcessedInFragment;
+};
+        
+
 bool SeqScanExecutor::p_execute(const NValueArray &params) {
     SeqScanPlanNode* node = dynamic_cast<SeqScanPlanNode*>(m_abstractNode);
     assert(node);
@@ -178,13 +206,21 @@ bool SeqScanExecutor::p_execute(const NValueArray &params) {
 
         int tuple_ctr = 0;
         int tuple_skipped = 0;
-        m_engine->setLastAccessedTable(target_table);
+        ProgressMonitorProxy pmp(m_engine, target_table);
         while ((limit == -1 || tuple_ctr < limit) && iterator.next(tuple))
         {
             VOLT_TRACE("INPUT TUPLE: %s, %d/%d\n",
                        tuple.debug(target_table->name()).c_str(), tuple_ctr,
                        (int)target_table->activeTupleCount());
-            m_engine->noteTuplesProcessedForProgressMonitoring(1);
+            // Experimental inlining for performance. Consider cleaning up, falling back to
+            // replace this block with a call to:
+            // pmp.progress();
+            ++pmp.m_tuplesProcessedInFragment;
+            if ((pmp.m_tuplesProcessedInFragment % LONG_OP_THRESHOLD) == 0) {
+                pmp.m_tuplesProcessedInFragment =
+                    m_engine->pushTuplesProcessedForProgressMonitoring(pmp.m_tuplesProcessedInFragment);
+            }
+
             //
             // For each tuple we need to evaluate it against our predicate
             //

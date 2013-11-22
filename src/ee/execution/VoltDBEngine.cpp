@@ -1693,7 +1693,6 @@ void VoltDBEngine::reportProgessToTopend() {
         tableName = m_lastAccessedTable->name();
         tableSize = m_lastAccessedTable->activeTupleCount();
     }
-if (tableSize < 0) // disable to assess performance impact
     //Update stats in java and let java determine if we should cancel this query.
     if(m_topend->fragmentProgressUpdate(m_currentIndexInBatch,
                                         *m_lastAccessedPlanNodeName,
