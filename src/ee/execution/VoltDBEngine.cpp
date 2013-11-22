@@ -1693,6 +1693,7 @@ void VoltDBEngine::reportProgessToTopend() {
         tableName = m_lastAccessedTable->name();
         tableSize = m_lastAccessedTable->activeTupleCount();
     }
+for (int slow = 0; slow < 2; ++slow) { // repeat for the sake of measuring performance impact
     //Update stats in java and let java determine if we should cancel this query.
     if(m_topend->fragmentProgressUpdate(m_currentIndexInBatch,
                                         *m_lastAccessedPlanNodeName,
@@ -1702,6 +1703,7 @@ void VoltDBEngine::reportProgessToTopend() {
         VOLT_DEBUG("Interrupt query.");
         throw InterruptException("Query interrupted.");
     }
+}
 }
 
 }
