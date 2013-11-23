@@ -217,8 +217,14 @@ class __attribute__((visibility("default"))) VoltDBEngine {
         // Executors can call this to note a certain number of tuples have been
         // scanned or processed.index
         inline void noteTuplesProcessedForProgressMonitoring(int tuplesProcessed);
-        inline int64_t pushTuplesProcessedForProgressMonitoring(int64_t totalTuplesProcessed);
         inline int64_t pullTuplesProcessedForProgressMonitoring(Table* target_table);
+#ifdef DYNAMIC_PROGRESS_TARGETS
+        inline int64_t
+#else
+        inline void
+#endif
+        postTuplesProcessedForProgressMonitoring(int64_t totalTuplesProcessed);
+        inline void pushTuplesProcessedForProgressMonitoring(int64_t totalTuplesProcessed);
 
         // -------------------------------------------------
         // Dependency Transfer Functions
@@ -656,18 +662,30 @@ inline void VoltDBEngine::noteTuplesProcessedForProgressMonitoring(int tuplesPro
     }
 }
 
-inline int64_t VoltDBEngine::pushTuplesProcessedForProgressMonitoring(int64_t totalTuplesProcessed) {
+inline int64_t VoltDBEngine::pullTuplesProcessedForProgressMonitoring(Table* target_table) {
+    setLastAccessedTable(target_table);
+    return m_tuplesProcessedInFragment;
+}
+
+#ifdef DYNAMIC_PROGRESS_TARGETS
+        inline int64_t
+#else
+        inline void
+#endif
+VoltDBEngine::postTuplesProcessedForProgressMonitoring(int64_t totalTuplesProcessed) {
+    m_tuplesProcessedInFragment = totalTuplesProcessed;
+    reportProgessToTopend();
+    // reserving the right to "move the target".
+#ifdef DYNAMIC_PROGRESS_TARGETS
+    return m_tuplesProcessedInFragment;
+#endif
+}
+
+inline void VoltDBEngine::pushTuplesProcessedForProgressMonitoring(int64_t totalTuplesProcessed) {
     m_tuplesProcessedInFragment = totalTuplesProcessed;
     if((m_tuplesProcessedInFragment % LONG_OP_THRESHOLD) == 0) {
         reportProgessToTopend();
     }
-    // reserving the right to "move the target".
-    return m_tuplesProcessedInFragment;
-}
-
-inline int64_t VoltDBEngine::pullTuplesProcessedForProgressMonitoring(Table* target_table) {
-    setLastAccessedTable(target_table);
-    return m_tuplesProcessedInFragment;
 }
 
 } // namespace voltdb

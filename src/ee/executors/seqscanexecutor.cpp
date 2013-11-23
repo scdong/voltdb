@@ -106,30 +106,34 @@ bool SeqScanExecutor::needsOutputTableClear() {
 
 class ProgressMonitorProxy {
 public:
-    ProgressMonitorProxy(VoltDBEngine* engine, Table* target_table)
+    ProgressMonitorProxy(VoltDBEngine* engine, Table* target_table, int64_t &countDown)
         : m_engine(engine)
         , m_tuplesProcessedInFragment(engine->pullTuplesProcessedForProgressMonitoring(target_table))
-    {}
+        , m_countDown(countDown)
+    {
+        m_countDown = LONG_OP_THRESHOLD - (m_tuplesProcessedInFragment % LONG_OP_THRESHOLD);
+        m_tuplesProcessedInFragment += countDown; // next target
+    }
 
     void progress()
     {
-        ++m_tuplesProcessedInFragment;
-        if ((m_tuplesProcessedInFragment % LONG_OP_THRESHOLD) == 0) {
-            m_tuplesProcessedInFragment =
-                m_engine->pushTuplesProcessedForProgressMonitoring(m_tuplesProcessedInFragment);
-        }
+        m_engine->pushTuplesProcessedForProgressMonitoring(m_tuplesProcessedInFragment);
+        m_tuplesProcessedInFragment += LONG_OP_THRESHOLD; // next target
+        m_countDown = LONG_OP_THRESHOLD;
     }
 
     ~ProgressMonitorProxy()
     {
-        m_engine->pushTuplesProcessedForProgressMonitoring(m_tuplesProcessedInFragment);
+        // Report progress against next target
+        m_engine->pushTuplesProcessedForProgressMonitoring(m_tuplesProcessedInFragment - m_countDown);
     }
 
 public:
     VoltDBEngine* const m_engine;
     int64_t m_tuplesProcessedInFragment;
+    int64_t& m_countDown;
 };
-        
+
 
 bool SeqScanExecutor::p_execute(const NValueArray &params) {
     SeqScanPlanNode* node = dynamic_cast<SeqScanPlanNode*>(m_abstractNode);
@@ -206,19 +210,17 @@ bool SeqScanExecutor::p_execute(const NValueArray &params) {
 
         int tuple_ctr = 0;
         int tuple_skipped = 0;
-        ProgressMonitorProxy pmp(m_engine, target_table);
+        int64_t progressCountdown = 0;
+        ProgressMonitorProxy pmp(m_engine, target_table, progressCountdown);
         while ((limit == -1 || tuple_ctr < limit) && iterator.next(tuple))
         {
             VOLT_TRACE("INPUT TUPLE: %s, %d/%d\n",
                        tuple.debug(target_table->name()).c_str(), tuple_ctr,
                        (int)target_table->activeTupleCount());
             // Experimental inlining for performance. Consider cleaning up, falling back to
-            // replace this block with a call to:
-            // pmp.progress();
-            ++pmp.m_tuplesProcessedInFragment;
-            if ((pmp.m_tuplesProcessedInFragment % LONG_OP_THRESHOLD) == 0) {
-                pmp.m_tuplesProcessedInFragment =
-                    m_engine->pushTuplesProcessedForProgressMonitoring(pmp.m_tuplesProcessedInFragment);
+            // moving more code into pmp.progress();
+            if (--progressCountdown == 0) {
+                pmp.progress();
             }
 
             //
