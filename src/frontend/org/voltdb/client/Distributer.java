@@ -709,7 +709,12 @@ class Distributer {
 
                 if (procedureInfo != null) {
                     hashedPartition = Constants.MP_INIT_PID;
-                    if (!procedureInfo.multiPart) {
+                    if (!procedureInfo.multiPart &&
+                            // This can be the first indication that the user forgot a required
+                            // parameter.  Limp along avoiding exceptios for now until ready to report
+                            // that error. The goal is to fall into a code path leading to cxn == null
+                            // in this case. Would it be better to fall back to hashedPartition = -1?
+                            invocation.parameterCount() > procedureInfo.partitionParameter) {
                         hashedPartition = m_hashinator.getHashedPartitionForParameter(
                                 procedureInfo.partitionParameterType,
                                 invocation.getPartitionParamValue(procedureInfo.partitionParameter));
